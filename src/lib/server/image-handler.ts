@@ -11,6 +11,7 @@ type Dependencies = {
   fetch: typeof fetch;
   apiKey?: string;
   apiBaseUrl: string;
+  appOrigin?: string;
 };
 
 class RequestError extends Error {
@@ -109,7 +110,7 @@ async function verifySession(
   let response: Response;
   try {
     response = await deps.fetch(
-      `${deps.apiBaseUrl.replace(/\/$/, "")}/search`,
+      `${deps.apiBaseUrl.replace(/\/$/, "")}/posts/search`,
       {
         headers: { Authorization: authorization, Accept: "application/json" },
         cache: "no-store",
@@ -153,13 +154,17 @@ export async function handleImageRequest(
     fetch,
     apiKey: process.env.OPENAI_API_KEY,
     apiBaseUrl: API_BASE_URL,
+    appOrigin: process.env.NETWORKAI_APP_ORIGIN,
   };
 
   try {
     const origin = request.headers.get("origin");
     const site = request.headers.get("sec-fetch-site");
+    // TLS may terminate before the request reaches the Next.js process.
+    const expectedOrigin = deps.appOrigin?.trim().replace(/\/+$/, "") ||
+      new URL(request.url).origin;
     if (
-      origin !== new URL(request.url).origin ||
+      origin !== expectedOrigin ||
       (site && site !== "same-origin")
     ) {
       throw new RequestError(

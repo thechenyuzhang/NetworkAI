@@ -43,7 +43,9 @@ interface PostComposerProps {
 }
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 30 * 1024 * 1024;
+const POST_IMAGE_EXTENSIONS = /\.(jpe?g|png|gif)$/i;
+const POST_VIDEO_EXTENSIONS = /\.(mov|mp4|avi|flv|wmv)$/i;
 const PROMPTS = [
   {
     label: "City photography",
@@ -63,13 +65,13 @@ function mediaError(file: File) {
   if (!file.type.startsWith("image/") && !file.type.startsWith("video/"))
     return "Choose an image or video file.";
   if (file.type === "image/svg+xml")
-    return "Choose a JPG, PNG, WebP, GIF, or other raster image.";
+    return "Choose a JPG, PNG, GIF, or WebP image.";
   if (
     file.size >
     (file.type.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES)
   )
     return file.type.startsWith("video/")
-      ? "Your video is too large. Choose a file under 50 MB."
+      ? "Your video is too large. Choose a file under 30 MB."
       : "Your image is too large. Choose a file under 10 MB.";
   if (file.size === 0) return "This file is empty. Please choose another.";
   return null;
@@ -268,6 +270,13 @@ export function PostComposer({
           ? "Add an image or video to your post."
           : "Write a few words to go with your post.",
       );
+      return;
+    }
+    const supportedExtension = media.type.startsWith("video/")
+      ? POST_VIDEO_EXTENSIONS
+      : POST_IMAGE_EXTENSIONS;
+    if (!supportedExtension.test(media.name)) {
+      setError("To publish, use JPG, PNG, GIF, MOV, MP4, AVI, FLV, or WMV. WebP images can be used as AI references.");
       return;
     }
     submitting.current = true;

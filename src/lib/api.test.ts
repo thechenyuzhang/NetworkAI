@@ -24,7 +24,7 @@ describe("existing Go REST contracts", () => {
       "header.payload.signature",
     );
     const [url, options] = fetchMock.mock.calls[0];
-    expect(url).toMatch(/\/signin$/);
+    expect(url).toMatch(/\/auth\/login$/);
     expect(options.method).toBe("POST");
     expect(options.headers.get("Content-Type")).toBe("application/json");
     expect(JSON.parse(options.body)).toEqual({
@@ -38,7 +38,7 @@ describe("existing Go REST contracts", () => {
     const fetchMock = mockResponse(new Response(null, { status: 200 }));
     await registerAccount("charlie", "test-password");
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0][0]).toMatch(/\/signup$/);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/users$/);
   });
 
   it("encodes search terms without injecting query parameters and supplies JWT", async () => {
@@ -49,11 +49,12 @@ describe("existing Go REST contracts", () => {
     });
     const [url, options] = fetchMock.mock.calls[0];
     const parsed = new URL(url);
-    expect(parsed.pathname).toBe("/search");
-    expect([...parsed.searchParams]).toEqual([
-      ["keywords", "plants & sun?"],
-      ["user", "a+b"],
-    ]);
+    expect(parsed.pathname).toBe("/posts/search");
+    expect([...parsed.searchParams]).toEqual([["user", "a+b"]]);
+    const keywordFetch = mockResponse(Response.json([]));
+    await searchPosts("existing-jwt", { keywords: " plants & sun? " });
+    const keywordUrl = new URL(keywordFetch.mock.calls[0][0]);
+    expect([...keywordUrl.searchParams]).toEqual([["keywords", "plants & sun?"]]);
     expect(options.headers.get("Authorization")).toBe("Bearer existing-jwt");
     expect(options.cache).toBe("no-store");
   });
@@ -93,10 +94,10 @@ describe("existing Go REST contracts", () => {
 
   it("uploads the exact existing multipart field names without overriding the boundary", async () => {
     const fetchMock = mockResponse(new Response(null, { status: 200 }));
-    const media = new File(["png-data"], "garden.png", { type: "image/png" });
+    const media = new File(["png-data"], "garden.PNG", { type: "image/png" });
     await createPost("token", { message: " A garden ", media });
     const [url, options] = fetchMock.mock.calls[0];
-    expect(url).toMatch(/\/upload$/);
+    expect(url).toMatch(/\/posts$/);
     expect(options.method).toBe("POST");
     expect(options.body.get("message")).toBe("A garden");
     expect(options.body.get("media_file").name).toBe("garden.png");
@@ -107,7 +108,7 @@ describe("existing Go REST contracts", () => {
   it("deletes by safely encoded post ID with the original method", async () => {
     const fetchMock = mockResponse(new Response(null, { status: 200 }));
     await deletePost("token", "folder/id?x=y");
-    expect(fetchMock.mock.calls[0][0]).toMatch(/\/post\/folder%2Fid%3Fx%3Dy$/);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/posts\/folder%2Fid%3Fx%3Dy$/);
     expect(fetchMock.mock.calls[0][1].method).toBe("DELETE");
   });
 

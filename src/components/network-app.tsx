@@ -44,11 +44,11 @@ import {
 } from "./ui/dialog";
 import { Skeleton } from "./ui/skeleton";
 import { deletePost, searchPosts } from "@/lib/api";
-import { inspirationPosts, type InspirationPost } from "@/lib/inspiration";
+import type { Post } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const topics = [
-  "All inspiration",
+  "All topics",
   "Nature",
   "Architecture",
   "Photography",
@@ -59,17 +59,14 @@ const prompts = [
   {
     label: "Somewhere unexpected",
     text: "A tiny cabin on a floating island above the clouds, soft morning light, cinematic photography",
-    image: "/images/mountain.jpg",
   },
   {
     label: "A quieter world",
     text: "A tranquil Japanese garden after rain, delicate moss, soft mist, editorial photography",
-    image: "/images/forest.jpg",
   },
   {
     label: "Space to dream",
     text: "A sunlit minimalist room with organic furniture, warm natural textures and a view of the sea",
-    image: "/images/interior.jpg",
   },
 ];
 function savedSubscribe(listener: () => void) {
@@ -81,19 +78,19 @@ function savedSubscribe(listener: () => void) {
   };
 }
 function useSaved(username?: string) {
-  const key = `networkai:saved:${username || "guest"}`;
+  const key = username ? `networkai:saved:${username}` : null;
   const raw = useSyncExternalStore(
     savedSubscribe,
     () => {
       try {
-        return localStorage.getItem(key) || "[]";
+        return key ? localStorage.getItem(key) || "[]" : "[]";
       } catch {
         return "[]";
       }
     },
     () => "[]",
   );
-  const posts = useMemo<InspirationPost[]>(() => {
+  const posts = useMemo<Post[]>(() => {
     try {
       const data = JSON.parse(raw);
       return Array.isArray(data)
@@ -101,11 +98,12 @@ function useSaved(username?: string) {
             .filter(
               (p) =>
                 p &&
+                p.sample !== true &&
                 typeof p.id === "string" &&
                 typeof p.message === "string" &&
                 typeof p.url === "string" &&
                 typeof p.user === "string" &&
-                ["image", "video"].includes(p.type),
+                ["image", "video", "unknown"].includes(p.type),
             )
             .slice(0, 100)
         : [];
@@ -113,7 +111,8 @@ function useSaved(username?: string) {
       return [];
     }
   }, [raw]);
-  const toggle = (post: InspirationPost) => {
+  const toggle = (post: Post) => {
+    if (!key) return;
     const exists = posts.some((p) => p.id === post.id);
     try {
       localStorage.setItem(
@@ -154,9 +153,9 @@ function NetworkAppContent({ view, initialQuery = "" }: NetworkAppProps) {
   const [query, setQuery] = useState(initialQuery);
   const [submittedQuery, setSubmittedQuery] = useState(initialQuery);
   const [scope, setScope] = useState<"keywords" | "user">("keywords");
-  const [topic, setTopic] = useState("All inspiration");
+  const [topic, setTopic] = useState("All topics");
   const [mediaType, setMediaType] = useState("all");
-  const [posts, setPosts] = useState<InspirationPost[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [load, setLoad] = useState<{
     status: "idle" | "loading" | "done" | "error";
     error?: string;
@@ -166,16 +165,25 @@ function NetworkAppContent({ view, initialQuery = "" }: NetworkAppProps) {
   const [visibleCount, setVisibleCount] = useState(12);
   const [composer, setComposer] = useState(false);
   const [initialPrompt, setInitialPrompt] = useState("");
-  const [selected, setSelected] = useState<InspirationPost | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<InspirationPost | null>(
-    null,
-  );
+  const [selected, setSelected] = useState<Post | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
   const [deleting, setDeleting] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
-  const privateView = view === "mine" || view === "studio";
+  const signedOutHeading = {
+    discover: "Sign in to explore posts",
+    mine: "Sign in to view your posts",
+    saved: "Sign in to view saved posts",
+    studio: "Sign in to create with AI",
+  }[view];
+  const destination = {
+    discover: "/",
+    mine: "/my-posts",
+    saved: "/saved",
+    studio: "/studio",
+  }[view];
   const signedOut = ready && !token;
   const searchWord =
-    submittedQuery || (topic === "All inspiration" ? "" : topic);
+    submittedQuery || (topic === "All topics" ? "" : topic);
   const requestKey = `${token}:${view}:${view === "mine" ? "" : searchWord}:${scope}:${refresh}`;
   const needsApi = !!token && (view === "discover" || view === "mine");
 
@@ -228,13 +236,11 @@ function NetworkAppContent({ view, initialQuery = "" }: NetworkAppProps) {
     setInitialPrompt(prompt);
     setComposer(true);
   };
-  const allPosts =
-    view === "saved" ? saved.posts : token ? posts : inspirationPosts;
+  const allPosts = view === "saved" ? saved.posts : posts;
   const displayPosts = allPosts.filter((post) => {
     if (mediaType !== "all" && post.type !== mediaType) return false;
     if (token && view === "discover") return true;
-    const haystack =
-      scope === "user" ? post.user : `${post.message} ${post.category || ""}`;
+    const haystack = scope === "user" ? post.user : post.message;
     return (
       !searchWord || haystack.toLowerCase().includes(searchWord.toLowerCase())
     );
@@ -250,7 +256,7 @@ function NetworkAppContent({ view, initialQuery = "" }: NetworkAppProps) {
   const clearSearch = () => {
     setQuery("");
     setSubmittedQuery("");
-    setTopic("All inspiration");
+    setTopic("All topics");
     setMediaType("all");
     setVisibleCount(12);
   };
@@ -286,7 +292,7 @@ function NetworkAppContent({ view, initialQuery = "" }: NetworkAppProps) {
   const description =
     view === "discover"
       ? signedOut
-        ? "A curated preview. Sign in to explore community posts."
+        ? "Explore images and videos shared by the community."
         : "Recent images and ideas from the community."
       : view === "mine"
         ? "Everything you have shared, in one place."
@@ -303,6 +309,7 @@ function NetworkAppContent({ view, initialQuery = "" }: NetworkAppProps) {
         Skip to content
       </a>
       <AppHeader
+        canSearch={!!token}
         view={view}
         user={user}
         query={query}
@@ -312,7 +319,7 @@ function NetworkAppContent({ view, initialQuery = "" }: NetworkAppProps) {
         searchRef={searchInput}
         onSearch={() => {
           setSubmittedQuery(query.trim());
-          setTopic("All inspiration");
+          setTopic("All topics");
           setVisibleCount(12);
           if (view === "studio")
             router.push(`/?q=${encodeURIComponent(query.trim())}`);
@@ -348,23 +355,19 @@ function NetworkAppContent({ view, initialQuery = "" }: NetworkAppProps) {
             </Button>
           )}
         </div>
-        {privateView && signedOut ? (
+        {signedOut ? (
           <section className="mx-auto flex min-h-80 max-w-md flex-col items-center justify-center py-10 text-center">
             <LogIn className="mb-5 size-7 text-muted-foreground" />
             <h2 className="text-xl font-semibold">
-              {view === "mine"
-                ? "Sign in to view your posts"
-                : "Sign in to create with AI"}
+              {signedOutHeading}
             </h2>
             <p className="mb-6 mt-3 text-sm leading-6 text-muted-foreground">
-              {view === "mine"
-                ? "Find and manage the posts you have shared."
-                : "Generate and refine images before sharing them."}
+              {view === "studio"
+                ? "Generate and refine images before sharing them."
+                : "Use your NetworkAI account to continue."}
             </p>
             <Button asChild>
-              <Link
-                href={`/login?next=${encodeURIComponent(view === "mine" ? "/my-posts" : "/studio")}`}
-              >
+              <Link href={`/login?next=${encodeURIComponent(destination)}`}>
                 Sign in to continue
               </Link>
             </Button>
@@ -548,7 +551,7 @@ function NetworkAppContent({ view, initialQuery = "" }: NetworkAppProps) {
                       key={post.id}
                       post={post}
                       saved={saved.posts.some((p) => p.id === post.id)}
-                      owned={!post.sample && post.user === user?.username}
+                      owned={post.user === user?.username}
                       onOpen={() => setSelected(post)}
                       onSave={() => saved.toggle(post)}
                       onDelete={() => setDeleteTarget(post)}
@@ -592,14 +595,10 @@ function NetworkAppContent({ view, initialQuery = "" }: NetworkAppProps) {
             <>
               <DialogHeader>
                 <DialogTitle className="pr-6">
-                  {selected.sample
-                    ? "Preview image"
-                    : `Post by ${selected.user}`}
+                  {`Post by ${selected.user}`}
                 </DialogTitle>
                 <DialogDescription>
-                  {selected.sample
-                    ? "Curated photography for inspiration. These are example posts, not live community activity."
-                    : `Shared by ${selected.user}`}
+                  {`Shared by ${selected.user}`}
                 </DialogDescription>
               </DialogHeader>
               <PostMedia
@@ -635,7 +634,7 @@ function NetworkAppContent({ view, initialQuery = "" }: NetworkAppProps) {
                 >
                   <Copy className="size-4" /> Copy caption
                 </Button>
-                {!selected.sample && selected.user === user?.username && (
+                {selected.user === user?.username && (
                   <Button
                     variant="ghost"
                     className="ml-auto text-destructive"

@@ -7,12 +7,13 @@ const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 function request(
   fields: { prompt?: string; image?: File; size?: string } = {},
   headers: Record<string, string> = {},
+  requestOrigin = origin,
 ) {
   const body = new FormData();
   body.set("prompt", fields.prompt ?? "A city floating in the clouds");
   if (fields.image) body.set("image", fields.image);
   if (fields.size) body.set("size", fields.size);
-  return new Request(`${origin}/api/ai/image`, {
+  return new Request(`${requestOrigin}/api/ai/image`, {
     method: "POST",
     body,
     headers: {
@@ -54,13 +55,22 @@ describe("AI image boundary", () => {
     expect(deps.fetch).not.toHaveBeenCalled();
   });
 
+  it("accepts the configured HTTPS origin behind a TLS-terminating proxy", async () => {
+    const deps = { ...setup(), appOrigin: origin, apiKey: undefined };
+    const proxied = request({}, { "Sec-Fetch-Site": "same-origin" }, "http://container:3000");
+    expect((await handleImageRequest(proxied, deps)).status).toBe(503);
+    const other = request({}, { Origin: "https://other.example" }, "http://container:3000");
+    expect((await handleImageRequest(other, deps)).status).toBe(403);
+    expect(deps.fetch).not.toHaveBeenCalled();
+  });
+
   it("does not authorize a token that Go rejects", async () => {
     const deps = setup(new Response("invalid JWT", { status: 401 }));
     const response = await handleImageRequest(request(), deps);
     expect(response.status).toBe(401);
     expect(deps.fetch).toHaveBeenCalledOnce();
     expect(deps.fetch).toHaveBeenCalledWith(
-      "https://go.example/search",
+      "https://go.example/posts/search",
       expect.objectContaining({
         headers: {
           Authorization: "Bearer test.jwt.signature",

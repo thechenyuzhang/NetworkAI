@@ -65,7 +65,7 @@ function AuthFormContent({ mode }: { mode: "login" | "register" }) {
       if (isRegistration) {
         await register(username.trim(), password);
         try {
-          await signIn(username.trim(), password);
+          await signIn(username.trim(), password, { afterRegistration: true });
         } catch {
           toast.success("Your account is ready. Sign in to get started.");
           router.replace(`/login?next=${encodeURIComponent(destination)}`);

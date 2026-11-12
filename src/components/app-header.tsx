@@ -37,6 +37,7 @@ interface AppHeaderProps {
   query: string;
   onQueryChange: (query: string) => void;
   scope: "keywords" | "user";
+  canSearch: boolean;
   onScopeChange: (scope: "keywords" | "user") => void;
   searchRef: RefObject<HTMLInputElement | null>;
   onSearch: () => void;
@@ -51,6 +52,7 @@ export function AppHeader({
   onQueryChange,
   scope,
   onScopeChange,
+  canSearch,
   searchRef,
   onSearch,
   onCreate,
@@ -82,45 +84,47 @@ export function AppHeader({
             </Link>
           ))}
         </nav>
-        <form
-          role="search"
-          className="order-last flex h-10 min-w-0 w-full items-center gap-2 rounded-lg bg-muted px-3 lg:order-none lg:ml-auto lg:flex-1"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onSearch();
-          }}
-        >
-          <button
-            type="submit"
-            aria-label="Search"
-            className="grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:text-foreground"
+        {canSearch && (
+          <form
+            role="search"
+            className="order-last flex h-10 min-w-0 w-full items-center gap-2 rounded-lg bg-muted px-3 lg:order-none lg:ml-auto lg:flex-1"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSearch();
+            }}
           >
-            <Search className="size-4" />
-          </button>
-          <input
-            ref={searchRef}
-            type="search"
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            maxLength={500}
-            placeholder={view === "mine" ? "Search your posts" : "Search posts"}
-            aria-label={view === "mine" ? "Search your posts" : "Search posts"}
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground focus-visible:outline-none"
-          />
-          {view === "discover" && (
-            <select
-              aria-label="Search scope"
-              value={scope}
-              onChange={(event) =>
-                onScopeChange(event.target.value as "keywords" | "user")
-              }
-              className="max-w-[86px] border-l bg-transparent py-1 pl-2 text-xs text-muted-foreground"
+            <button
+              type="submit"
+              aria-label="Search"
+              className="grid size-7 shrink-0 place-items-center rounded text-muted-foreground hover:text-foreground"
             >
-              <option value="keywords">Caption</option>
-              <option value="user">Creator</option>
-            </select>
-          )}
-        </form>
+              <Search className="size-4" />
+            </button>
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              maxLength={500}
+              placeholder={view === "mine" ? "Search your posts" : "Search posts"}
+              aria-label={view === "mine" ? "Search your posts" : "Search posts"}
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground focus-visible:outline-none"
+            />
+            {view === "discover" && (
+              <select
+                aria-label="Search scope"
+                value={scope}
+                onChange={(event) =>
+                  onScopeChange(event.target.value as "keywords" | "user")
+                }
+                className="max-w-[86px] border-l bg-transparent py-1 pl-2 text-xs text-muted-foreground"
+              >
+                <option value="keywords">Caption</option>
+                <option value="user">Creator</option>
+              </select>
+            )}
+          </form>
+        )}
         <div className="ml-auto flex shrink-0 items-center gap-4 lg:ml-0">
           {user ? (
             <DropdownMenu>

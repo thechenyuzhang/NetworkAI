@@ -3,7 +3,7 @@ import type { CreatePostInput, Post, SearchOptions } from "./types";
 
 export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "https://socialai-496702.uw.r.appspot.com"
+  "https://networkai-513321.uw.r.appspot.com"
 ).replace(/\/+$/, "");
 
 export class ApiError extends Error {
@@ -73,7 +73,7 @@ export async function login(
   signal?: AbortSignal,
 ): Promise<string> {
   try {
-    const response = await request("/signin", {
+    const response = await request("/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: username.trim(), password }),
@@ -116,7 +116,7 @@ export async function registerAccount(
   password: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  await request("/signup", {
+  await request("/users", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username: username.trim(), password }),
@@ -132,7 +132,7 @@ function isPost(value: unknown): value is Post {
     typeof post.user === "string" &&
     typeof post.message === "string" &&
     typeof post.url === "string" &&
-    (post.type === "image" || post.type === "video")
+    (post.type === "image" || post.type === "video" || post.type === "unknown")
   );
 }
 
@@ -142,10 +142,10 @@ export async function searchPosts(
   signal?: AbortSignal,
 ): Promise<Post[]> {
   const params = new URLSearchParams();
-  if (options.keywords?.trim()) params.set("keywords", options.keywords.trim());
   if (options.user?.trim()) params.set("user", options.user.trim());
+  else if (options.keywords?.trim()) params.set("keywords", options.keywords.trim());
   const query = params.size ? `?${params.toString()}` : "";
-  const response = await request(`/search${query}`, { signal }, token);
+  const response = await request(`/posts/search${query}`, { signal }, token);
   let data: unknown;
   try {
     data = await response.json();
@@ -173,9 +173,12 @@ export async function createPost(
 ): Promise<void> {
   const data = new FormData();
   data.append("message", input.message.trim());
-  data.append("media_file", input.media);
+  const name = input.media.name;
+  const dot = name.lastIndexOf(".");
+  const filename = dot === -1 ? name : name.slice(0, dot) + name.slice(dot).toLowerCase();
+  data.append("media_file", input.media, filename);
   // Let fetch supply the multipart boundary expected by the existing Go API.
-  await request("/upload", { method: "POST", body: data, signal }, token);
+  await request("/posts", { method: "POST", body: data, signal }, token);
 }
 
 export async function deletePost(
@@ -183,9 +186,16 @@ export async function deletePost(
   id: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  await request(
-    `/post/${encodeURIComponent(id)}`,
-    { method: "DELETE", signal },
-    token,
-  );
+  try {
+    await request(
+      `/posts/${encodeURIComponent(id)}`,
+      { method: "DELETE", signal },
+      token,
+    );
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 404 || error.status === 405)) {
+      throw new ApiError("The backend could not delete this post. It has not been removed here.", error.status);
+    }
+    throw error;
+  }
 }

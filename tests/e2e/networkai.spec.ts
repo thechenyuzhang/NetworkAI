@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "https://socialai-496702.uw.r.appspot.com").replace(/\/+$/, "");
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "https://networkai-513321.uw.r.appspot.com").replace(/\/+$/, "");
 const imageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
 const testImage = { name: "garden.png", mimeType: "image/png", buffer: Buffer.from(imageBase64, "base64") };
 const token = (username = "charlie", expiresAt = Math.floor(Date.now() / 1000) + 3600) =>
@@ -21,16 +21,18 @@ async function seedSession(page: Page, jwt = token()) {
 async function mockBackend(page: Page) {
   const state = {
     posts: [
-      { id: "own-one", user: "charlie", message: "Morning light in my garden", url: "/images/forest.jpg", type: "image" },
-      { id: "own-two", user: "charlie", message: "A quiet alpine afternoon", url: "/images/alpine-lake.jpg", type: "image" },
-      { id: "other-one", user: "alex", message: "A beautiful city corner", url: "/images/interior.jpg", type: "image" },
+      { id: "own-one", user: "charlie", message: "Morning light in my garden", url: `data:image/png;base64,${imageBase64}`, type: "image" },
+      { id: "own-two", user: "charlie", message: "A quiet alpine afternoon", url: `data:image/png;base64,${imageBase64}`, type: "image" },
+      { id: "other-one", user: "alex", message: "A beautiful city corner", url: `data:image/png;base64,${imageBase64}`, type: "image" },
     ] as MockPost[],
     searches: [] as URL[],
     uploads: [] as string[],
     deletedIds: [] as string[],
     signIns: [] as Record<string, string>[],
+    rejectNextSignIn: false,
     registrations: [] as Record<string, string>[],
     searchUnavailable: false,
+    deleteUnavailable: false,
     unauthorized: false,
     jwt: token(),
   };
@@ -44,15 +46,19 @@ async function mockBackend(page: Page) {
     const request = route.request();
     const url = new URL(request.url());
     if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
-    if (url.pathname === "/signin") {
+    if (url.pathname === "/auth/login") {
       state.signIns.push(request.postDataJSON());
+      if (state.rejectNextSignIn) {
+        state.rejectNextSignIn = false;
+        return json(route, null, 401);
+      }
       return route.fulfill({ status: 200, contentType: "text/plain", headers: cors, body: state.jwt });
     }
-    if (url.pathname === "/signup") {
+    if (url.pathname === "/users") {
       state.registrations.push(request.postDataJSON());
       return json(route, null);
     }
-    if (url.pathname === "/search") {
+    if (url.pathname === "/posts/search") {
       state.searches.push(url);
       if (state.unauthorized) return json(route, { error: "Unauthorized" }, 401);
       if (state.searchUnavailable) {
@@ -62,15 +68,16 @@ async function mockBackend(page: Page) {
       const keyword = url.searchParams.get("keywords");
       return json(route, state.posts.filter((post) => (!user || post.user === user) && (!keyword || post.message.toLowerCase().includes(keyword.toLowerCase()))));
     }
-    if (url.pathname === "/upload") {
+    if (url.pathname === "/posts") {
       const body = request.postDataBuffer()?.toString() || "";
       state.uploads.push(body);
       const message = /name="message"\r\n\r\n([\s\S]*?)\r\n--/.exec(body)?.[1] || "Uploaded post";
-      state.posts.unshift({ id: `new-${state.uploads.length}`, user: "charlie", message, url: "/images/forest.jpg", type: "image" });
+      state.posts.unshift({ id: `new-${state.uploads.length}`, user: "charlie", message, url: `data:image/png;base64,${imageBase64}`, type: "image" });
       return json(route, null);
     }
-    if (url.pathname.startsWith("/post/") && request.method() === "DELETE") {
-      const id = decodeURIComponent(url.pathname.slice("/post/".length));
+    if (url.pathname.startsWith("/posts/") && request.method() === "DELETE") {
+      const id = decodeURIComponent(url.pathname.slice("/posts/".length));
+      if (state.deleteUnavailable) return json(route, null, 404);
       state.deletedIds.push(id);
       state.posts = state.posts.filter((post) => post.id !== id);
       return json(route, null);
@@ -84,36 +91,35 @@ const visibleLink = (page: Page, name: string) => page.getByRole("link", { name,
 const createButton = (page: Page) => page.getByRole("button", { name: "Create a post", exact: true }).filter({ visible: true }).first();
 const articleFor = (page: Page, caption: string) => page.getByRole("article").filter({ hasText: caption });
 
-test("guest preview supports filters, search, persistent bookmarks, and responsive navigation", async ({ page }, testInfo) => {
+test("signed-out discovery requires authentication and fits the viewport", async ({ page }, testInfo) => {
   const backend = await mockBackend(page);
   await page.goto("/");
-  await expect(page.getByText("A curated preview. Sign in to explore community posts.")).toBeVisible();
-  await expect(page.getByRole("article")).toHaveCount(6);
-  await page.getByRole("combobox", { name: "Media type" }).selectOption("video");
-  await expect(page.getByRole("heading", { name: "No matching posts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in to explore posts" })).toBeVisible();
   await expect(page.getByRole("article")).toHaveCount(0);
-  await page.getByRole("combobox", { name: "Media type" }).selectOption("all");
-  await expect(page.getByRole("article")).toHaveCount(6);
-  await page.getByRole("button", { name: "Nature", exact: true }).click();
+  await expect(page.getByRole("searchbox")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Sign in to continue" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  if (testInfo.project.name === "mobile") {
+    await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
+  }
+  expect(backend.searches).toHaveLength(0);
+});
+
+test("live feed results support keyword search and persistent bookmarks", async ({ page }) => {
+  await seedSession(page);
+  const backend = await mockBackend(page);
+  await page.goto("/");
   await expect(page.getByRole("article")).toHaveCount(3);
-  await page.getByRole("button", { name: "All inspiration", exact: true }).click();
-  await page.getByRole("searchbox", { name: "Search posts" }).fill("mountains");
+  await page.getByRole("searchbox", { name: "Search posts" }).fill("garden");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByRole("article")).toHaveCount(1);
-  await page.getByRole("button", { name: "Save post: Somewhere between the mountains and the sky.", exact: true }).click();
+  expect(backend.searches.some((url) => url.searchParams.get("keywords") === "garden")).toBe(true);
+  await page.getByRole("button", { name: "Save post: Morning light in my garden", exact: true }).click();
   await page.locator('a[href="/saved"]:visible').first().click();
   await expect(page).toHaveURL(/\/saved$/);
-  await expect(page.getByRole("heading", { name: "Saved posts", exact: true })).toBeVisible();
   await expect(page.getByRole("article")).toHaveCount(1);
   await page.reload();
-  await expect(page.getByRole("article")).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Unsave post: Somewhere between the mountains and the sky.", exact: true })).toBeVisible();
-  await visibleLink(page, "Discover").click();
-  await expect(page.getByRole("article")).toHaveCount(6);
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  if (testInfo.project.name === "mobile") await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath(`discover-${testInfo.project.name}.jpg`), type: "jpeg", quality: 85 });
-  expect(backend.searches).toHaveLength(0);
+  await expect(page.getByRole("button", { name: "Unsave post: Morning light in my garden", exact: true })).toBeVisible();
 });
 
 test("protected personal content returns to My posts after sign-in and searches captions locally", async ({ page }) => {
@@ -138,12 +144,13 @@ test("protected personal content returns to My posts after sign-in and searches 
   await expect(page.getByRole("article")).toHaveCount(3);
   await page.getByRole("button", { name: "Account menu" }).click();
   await page.getByRole("menuitem", { name: "Sign out" }).click();
-  await expect(page.getByText("A curated preview. Sign in to explore community posts.")).toBeVisible();
+  await expect(page.getByText("Sign in to explore posts")).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem("token"))).toBeNull();
 });
 
-test("registration validates confirmation and signs into the original protected destination", async ({ page }) => {
+test("registration validates confirmation and retries sign-in while the new account is indexing", async ({ page }) => {
   const backend = await mockBackend(page);
+  backend.rejectNextSignIn = true;
   await page.goto("/register?next=%2Fmy-posts");
   await page.getByLabel("Username", { exact: true }).fill("charlie");
   await page.getByLabel("Password", { exact: true }).fill("test-password");
@@ -156,7 +163,7 @@ test("registration validates confirmation and signs into the original protected 
   await expect(page).toHaveURL(/\/my-posts$/);
   await expect(page.getByRole("article")).toHaveCount(2);
   expect(backend.registrations).toEqual([{ username: "charlie", password: "test-password" }]);
-  expect(backend.signIns).toHaveLength(1);
+  expect(backend.signIns).toHaveLength(2);
 });
 
 test("upload preserves drafts, validates media, publishes multipart data, and refreshes the feed", async ({ page }) => {
@@ -199,6 +206,21 @@ test("deletion is owner-only, requires confirmation, and removes a published pos
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await expect(page.getByRole("article")).toHaveCount(2);
   expect(backend.deletedIds).toEqual(["own-one"]);
+});
+
+test("unavailable deletion preserves the published post", async ({ page }) => {
+  await seedSession(page);
+  const backend = await mockBackend(page);
+  backend.deleteUnavailable = true;
+  await page.goto("/");
+  await page.getByRole("button", { name: "Delete post: Morning light in my garden", exact: true }).click();
+  await page.getByRole("button", { name: "Delete post", exact: true }).click();
+  await expect(page.getByText("The backend could not delete this post. It has not been removed here.")).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("button", { name: "Keep post", exact: true }).click();
+  await expect(articleFor(page, "Morning light in my garden")).toBeVisible();
+  await expect(page.getByRole("article")).toHaveCount(3);
+  expect(backend.deletedIds).toHaveLength(0);
 });
 
 test("expired legacy tokens are cleared before protected requests are sent", async ({ page }) => {

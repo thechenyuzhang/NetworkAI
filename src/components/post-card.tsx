@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Bookmark, ImageIcon, Trash2 } from "lucide-react";
-import type { InspirationPost } from "@/lib/inspiration";
+import type { Post } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function Avatar({
@@ -32,11 +32,11 @@ export function PostMedia({
   post,
   className,
 }: {
-  post: InspirationPost;
+  post: Post;
   className?: string;
 }) {
   const [failed, setFailed] = useState(false);
-  if (failed)
+  if (failed || post.type === "unknown")
     return (
       <div
         className={cn(
@@ -78,7 +78,7 @@ export function PostCard({
   onSave,
   onDelete,
 }: {
-  post: InspirationPost;
+  post: Post;
   saved: boolean;
   owned: boolean;
   onOpen: () => void;

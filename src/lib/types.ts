@@ -3,7 +3,7 @@ export interface Post {
   user: string;
   message: string;
   url: string;
-  type: "image" | "video";
+  type: "image" | "video" | "unknown";
   createdAt?: string;
 }
 

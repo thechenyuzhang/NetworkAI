@@ -24,7 +24,11 @@ interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
   ready: boolean;
-  signIn: (username: string, password: string) => Promise<void>;
+  signIn: (
+    username: string,
+    password: string,
+    options?: { afterRegistration?: boolean },
+  ) => Promise<void>;
   signOut: () => void;
   register: (username: string, password: string) => Promise<void>;
 }
@@ -125,12 +129,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session, signOut, store]);
 
   const signIn = useCallback(
-    async (username: string, password: string) => {
+    async (
+      username: string,
+      password: string,
+      options?: { afterRegistration?: boolean },
+    ) => {
       activeSignIn.current?.abort();
       const controller = new AbortController();
       activeSignIn.current = controller;
       try {
-        const token = await login(username, password, controller.signal);
+        const attempt = () => login(username, password, controller.signal);
+        const token = await attempt().catch(async (error: unknown) => {
+          if (
+            !options?.afterRegistration ||
+            !(error instanceof ApiError) ||
+            error.status !== 401
+          ) {
+            throw error;
+          }
+          // Newly registered accounts become searchable after Elasticsearch refreshes.
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          controller.signal.throwIfAborted();
+          return attempt();
+        });
         controller.signal.throwIfAborted();
         const next = sessionFromToken(token, username.trim());
         if (!next) {
